@@ -7,39 +7,30 @@ fn main() {
     );
 }
 
-fn whitespace(mut input: &str) -> &str {
-    while matches!(input.chars().next(), Some(' ')) {
-        let mut chars = input.chars();
-        chars.next();
-        input = chars.as_str();
+fn whitespace(input: &str) -> &str {
+    let mut cs = input.chars();
+    while let Some(' ') = cs.next() {
+        cs.next();
     }
-    input
+    cs.as_str()
 }
 
-fn number(mut input: &str) -> &str {
-    if matches!(
-        input.chars().next(),
-        Some(_x @ ('-' | '+' | '.' | '0'..='9'))
-    ) {
-        while matches!(input.chars().next(), Some(_x @ ('.' | '0'..='9'))) {
-            let mut chars = input.chars();
-            chars.next();
-            input = chars.as_str();
+fn number(input: &str) -> &str {
+    let mut cs = input.chars();
+    if let Some(_x @ ('-' | '+' | '.' | '0'..='9')) = cs.next() {
+        while let Some(_x @ ('.' | '0'..='9')) = cs.next() {
+            cs.next();
         }
     }
-    input
+    cs.as_str()
 }
 
-fn ident(mut input: &str) -> &str {
-    if matches!(input.chars().next(), Some(_x @ ('a'..='z' | 'A'..='Z'))) {
-        while matches!(
-            input.chars().next(),
-            Some(_x @ ('a'..='z' | 'A'..='Z' | '0'..='9'))
-        ) {
-            let mut chars = input.chars();
-            chars.next();
-            input = chars.as_str();
+fn ident(input: &str) -> &str {
+    let mut cs = input.chars();
+    if let Some(_x @ ('a'..='z' | 'A'..='Z')) = cs.next() {
+        while let Some(_x @ ('a'..='z' | 'A'..='Z' | '0'..='9')) = cs.next() {
+            cs.next();
         }
     }
-    input
+    cs.as_str()
 }
