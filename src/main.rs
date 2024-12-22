@@ -1,5 +1,8 @@
 fn main() {
-    let s = "(123 456 world)";
+    let s = "Hello world";
+    println!("source: {}, parsed: {:?}", s, source(s));
+
+    let s = "(123 456 ) world";
     println!("source: {}, parsed: {:?}", s, source(s));
 
     let s = "((car cdr) cdr)";
@@ -19,37 +22,55 @@ fn peek_char(input: &str) -> Option<char> {
     input.chars().next()
 }
 
-fn source(mut input: &str) -> Vec<Token> {
+fn source(mut input: &str) -> (&str, TokenTree) {
     let mut tokens = vec![];
     while !input.is_empty() {
-        input = if let (next_input, Some(token)) = token(input) {
-            tokens.push(token);
-            next_input
+        input = if let Some((next_input, token)) = token(input) {
+            match token {
+                Token::LParen => {
+                    let (next_input, tt) = source(next_input);
+                    tokens.push(tt);
+                    next_input
+                }
+                Token::RParen => return (next_input, TokenTree::Tree(tokens)),
+                _ => {
+                    tokens.push(TokenTree::Token(token));
+                    next_input
+                }
+            }
         } else {
             break;
         }
     }
-    tokens
+    (input, TokenTree::Tree(tokens))
 }
-#[derive(Debug, PartialEq, Eq)]
-enum Token {
-    Ident,
-    Number,
+
+#[derive(Debug, PartialEq)]
+enum Token<'src> {
+    Ident(&'src str),
+    Number(f64),
     LParen,
     RParen,
 }
 
-fn token(input: &str) -> (&str, Option<Token>) {
-    if let (i, Some(res)) = ident(whitespace(input)) {
-        (i, Some(res))
-    } else if let (i, Some(res)) = number(whitespace(input)) {
-        (i, Some(res))
-    } else if let (i, Some(res)) = lparen(whitespace(input)) {
-        (i, Some(res))
-    } else if let (i, Some(res)) = rparen(whitespace(input)) {
-        (i, Some(res))
+#[derive(Debug, PartialEq)]
+enum TokenTree<'src> {
+    Token(Token<'src>),
+    Tree(Vec<TokenTree<'src>>),
+}
+
+fn token(input: &str) -> Option<(&str, Token)> {
+    let input = whitespace(input);
+    if let Some(res) = ident(input) {
+        Some(res)
+    } else if let Some(res) = number(input) {
+        Some(res)
+    } else if let Some(res) = lparen(input) {
+        Some(res)
+    } else if let Some(res) = rparen(input) {
+        Some(res)
     } else {
-        (input, None)
+        None
     }
 }
 
@@ -60,45 +81,51 @@ fn whitespace(mut input: &str) -> &str {
     input
 }
 
-fn ident(mut input: &str) -> (&str, Option<Token>) {
+fn ident(mut input: &str) -> Option<(&str, Token)> {
+    let start = input;
     if let Some(_x @ ('a'..='z' | 'A'..='Z')) = peek_char(input) {
         input = advance_char(input);
         while let Some(_x @ ('a'..='z' | 'A'..='Z' | '0'..='9')) = peek_char(input) {
             input = advance_char(input);
         }
-        (input, Some(Token::Ident))
+        Some((input, Token::Ident(&start[..(start.len() - input.len())])))
     } else {
-        (input, None)
+        None
     }
 }
 
-fn number(mut input: &str) -> (&str, Option<Token>) {
+fn number(mut input: &str) -> Option<(&str, Token)> {
+    let start = input;
     if let Some(_x @ ('-' | '+' | '.' | '0'..='9')) = peek_char(input) {
         input = advance_char(input);
         while let Some(_x @ ('.' | '0'..='9')) = peek_char(input) {
             input = advance_char(input);
         }
-        (input, Some(Token::Number))
+        if let Ok(num) = start[..(start.len() - input.len())].parse() {
+            Some((input, Token::Number(num)))
+        } else {
+            None
+        }
     } else {
-        (input, None)
+        None
     }
 }
 
-fn lparen(mut input: &str) -> (&str, Option<Token>) {
+fn lparen(mut input: &str) -> Option<(&str, Token)> {
     if let Some('(') = peek_char(input) {
         input = advance_char(input);
-        (input, Some(Token::LParen))
+        Some((input, Token::LParen))
     } else {
-        (input, None)
+        None
     }
 }
 
-fn rparen(mut input: &str) -> (&str, Option<Token>) {
+fn rparen(mut input: &str) -> Option<(&str, Token)> {
     if let Some(')') = peek_char(input) {
         input = advance_char(input);
-        (input, Some(Token::RParen))
+        Some((input, Token::RParen))
     } else {
-        (input, None)
+        None
     }
 }
 
@@ -113,11 +140,11 @@ mod test {
 
     #[test]
     fn test_ident() {
-        assert_eq!(ident("Adam"), ("", Some(Token::Ident)));
+        assert_eq!(ident("Adam"), Some(("", Token::Ident("Adam"))));
     }
 
     #[test]
     fn test_number() {
-        assert_eq!(number("123.45 "), (" ", Some(Token::Number)));
+        assert_eq!(number("123.45 "), Some((" ", Token::Number(123.45))));
     }
 }
