@@ -3,10 +3,11 @@ use nom::{
     bytes::complete::tag,
     character::complete::{alpha1, alphanumeric1, char, multispace0},
     combinator::recognize,
+    error::ParseError,
     multi::{fold_many0, many0},
     number::complete::recognize_float,
     sequence::{delimited, pair},
-    IResult,
+    IResult, Parser,
 };
 
 fn main() {
@@ -17,13 +18,16 @@ fn main() {
     let s = "123";
     println!("source: {}, parsed: {:?}", s, ex_eval(s));
 
+    let s = "2 * pi";
+    println!("source: {}, parsed: {:?}", s, ex_eval(s));
+
     let s = "(123 + 456 ) + pi";
     println!("source: {}, parsed: {:?}", s, ex_eval(s));
 
-    let s = "10 + (100 + 1)";
+    let s = "10 - (100 + 1)";
     println!("source: {}, parsed: {:?}", s, ex_eval(s));
 
-    let s = "((1 + 2) + (3 + 4)) + 5 + 6";
+    let s = "(3 + 7) / (2 + 3)";
     println!("source: {}, parsed: {:?}", s, ex_eval(s));
 }
 
@@ -32,6 +36,9 @@ enum Expression<'src> {
     Ident(&'src str),
     NumLiteral(f64),
     Add(Box<Expression<'src>>, Box<Expression<'src>>),
+    Sub(Box<Expression<'src>>, Box<Expression<'src>>),
+    Mul(Box<Expression<'src>>, Box<Expression<'src>>),
+    Div(Box<Expression<'src>>, Box<Expression<'src>>),
 }
 
 fn eval(expr: Expression) -> f64 {
@@ -40,22 +47,40 @@ fn eval(expr: Expression) -> f64 {
         Expression::Ident(id) => panic!("Unknown name {:?}", id),
         Expression::NumLiteral(n) => n,
         Expression::Add(lhs, rhs) => eval(*lhs) + eval(*rhs),
+        Expression::Sub(lhs, rhs) => eval(*lhs) - eval(*rhs),
+        Expression::Mul(lhs, rhs) => eval(*lhs) * eval(*rhs),
+        Expression::Div(lhs, rhs) => eval(*lhs) / eval(*rhs),
     }
 }
+
+fn expr(input: &str) -> IResult<&str, Expression> {
+    let (input, init) = term(input)?;
+    fold_many0(
+        pair(space_delimited(alt((char('+'), char('-')))), term),
+        move || init.clone(),
+        |acc, (op, val): (char, Expression)| match op {
+            '+' => Expression::Add(Box::new(acc), Box::new(val)),
+            '-' => Expression::Sub(Box::new(acc), Box::new(val)),
+            _ => panic!("Additive expression should have '+' or '-' operator"),
+        },
+    )(input)
+}
+
 fn term(input: &str) -> IResult<&str, Expression> {
+    let (input, init) = factor(input)?;
+    fold_many0(
+        pair(space_delimited(alt((char('*'), char('/')))), factor),
+        move || init.clone(),
+        |acc, (op, val): (char, Expression)| match op {
+            '*' => Expression::Mul(Box::new(acc), Box::new(val)),
+            '/' => Expression::Div(Box::new(acc), Box::new(val)),
+            _ => panic!("Multiplicative expression should have '*' or '/' operator"),
+        },
+    )(input)
+}
+
+fn factor(input: &str) -> IResult<&str, Expression> {
     alt((number, ident, parens))(input)
-}
-
-fn ident(input: &str) -> IResult<&str, Expression> {
-    let (r, res) = delimited(multispace0, identifier, multispace0)(input)?;
-    Ok((r, Expression::Ident(res)))
-}
-
-fn identifier(input: &str) -> IResult<&str, &str> {
-    recognize(pair(
-        alt((alpha1, tag("_"))),
-        many0(alt((alphanumeric1, tag("_")))),
-    ))(input)
 }
 
 fn number(input: &str) -> IResult<&str, Expression> {
@@ -71,6 +96,18 @@ fn number(input: &str) -> IResult<&str, Expression> {
     ))
 }
 
+fn ident(input: &str) -> IResult<&str, Expression> {
+    let (r, res) = delimited(multispace0, identifier, multispace0)(input)?;
+    Ok((r, Expression::Ident(res)))
+}
+
+fn identifier(input: &str) -> IResult<&str, &str> {
+    recognize(pair(
+        alt((alpha1, tag("_"))),
+        many0(alt((alphanumeric1, tag("_")))),
+    ))(input)
+}
+
 fn parens(input: &str) -> IResult<&str, Expression> {
     delimited(
         multispace0,
@@ -79,11 +116,11 @@ fn parens(input: &str) -> IResult<&str, Expression> {
     )(input)
 }
 
-fn expr(input: &str) -> IResult<&str, Expression> {
-    let (input, init) = term(input)?;
-    fold_many0(
-        pair(delimited(multispace0, char('+'), multispace0), term),
-        move || init.clone(),
-        |acc, (_op, val): (char, Expression)| Expression::Add(Box::new(acc), Box::new(val)),
-    )(input)
+fn space_delimited<'src, O, E>(
+    f: impl Parser<&'src str, O, E>,
+) -> impl FnMut(&'src str) -> IResult<&'src str, O, E>
+where
+    E: ParseError<&'src str>,
+{
+    delimited(multispace0, f, multispace0)
 }
